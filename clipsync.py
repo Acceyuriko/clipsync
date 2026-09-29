@@ -19,6 +19,56 @@ import time
 PORT = 48021
 POLL = 0.5
 
+# 只在家里的网络里工作。不在就自动停，避免电脑拿到外面还开着。
+HOME_NET = "192.168.1."
+ROUTER_MAC = "1c:67:4a:ab:90:76"
+NET_CHECK = 30
+
+
+def router_mac():
+    """ARP 表里路由器那个 IP 的 MAC。小写冒号分隔，查不到返回 None。"""
+    ip = HOME_NET + "1"
+
+    # 先戳一下，逼 ARP 表把这条建出来。缓存过期时直接查会误判成不在家。
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.sendto(b"", (ip, 9))
+        s.close()
+    except OSError:
+        pass
+
+    cmd = ["arp", "-n", ip] if sys.platform == "darwin" else ["arp", "-a", ip]
+    for _ in range(5):
+        out = subprocess.run(cmd, capture_output=True, text=True).stdout
+        for word in out.split():
+            mac = word.lower().replace("-", ":")
+            if len(mac) == 17 and mac.count(":") == 5:
+                return mac
+        time.sleep(0.2)
+    return None
+
+
+def on_home_net():
+    """现在是不是在家的网络里。两道检查都要过。
+
+    1. 本机在 HOME_NET 网段。探测路由器地址不会真的发包，只是查路由表。
+    2. 路由器的 MAC 就是家里那个。
+
+    只查网段不够——很多公共 Wi-Fi 也用 192.168.1.x，会误判成在家。
+    不要探测 8.8.8.8：开了 Clash TUN 的话会被劫持，拿到的是 198.18.0.1。
+    """
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect((HOME_NET + "1", 80))
+        if not s.getsockname()[0].startswith(HOME_NET):
+            return False
+    except OSError:
+        return False
+    finally:
+        s.close()
+    return router_mac() == ROUTER_MAC
+
+
 # ---------------------------------------------------------------- macOS
 
 MAC_IMG = "/tmp/clipsync-mac.png"
@@ -191,13 +241,24 @@ def session(conn):
 
 
 def serve():
+    if not on_home_net():
+        print("不在家里的网络，不启动", flush=True)
+        return
     srv = socket.socket()
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind(("0.0.0.0", PORT))
     srv.listen(1)
+    srv.settimeout(NET_CHECK)
     print("监听 %d，等客户端连上来" % PORT, flush=True)
     while True:
-        conn, addr = srv.accept()
+        if not on_home_net():
+            print("离开家里的网络，停止监听", flush=True)
+            return
+        try:
+            conn, addr = srv.accept()
+        except socket.timeout:
+            continue
+        conn.settimeout(None)
         print("已连接 %s" % addr[0], flush=True)
         try:
             session(conn)
@@ -207,7 +268,19 @@ def serve():
 
 
 def connect(host):
+    home = True
+    checked = 0
     while True:
+        # 不能每轮都查，arp 要起进程。NET_CHECK 秒查一次就够。
+        if time.time() - checked > NET_CHECK:
+            checked = time.time()
+            new = on_home_net()
+            if new != home:
+                print("开始同步" if new else "不在家里的网络，暂停同步", flush=True)
+                home = new
+        if not home:
+            time.sleep(10)
+            continue
         try:
             conn = socket.create_connection((host, PORT))
             print("已连上 %s" % host, flush=True)

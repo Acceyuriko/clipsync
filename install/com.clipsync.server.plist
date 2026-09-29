@@ -26,8 +26,15 @@
 	</array>
 	<key>RunAtLoad</key>
 	<true/>
+	<!-- 不在家里的网络时进程会正常退出（exit 0），这时不要立刻重启 -->
 	<key>KeepAlive</key>
-	<true/>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+	<!-- 每分钟试一次，回到家一分钟内自动开始监听 -->
+	<key>StartInterval</key>
+	<integer>60</integer>
 	<key>StandardOutPath</key>
 	<string>/Users/yuriko/Library/Logs/clipsync.log</string>
 	<key>StandardErrorPath</key>
