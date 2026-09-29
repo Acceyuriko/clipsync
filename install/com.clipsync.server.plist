@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  开机自启：把 clipsync 当服务端跑。
+
+  装法：
+    1. 把 clipsync.py 放到 ~/bin/clipsync.py
+    2. 把这个文件放到 ~/Library/LaunchAgents/com.clipsync.server.plist
+    3. launchctl bootstrap gui/501 ~/Library/LaunchAgents/com.clipsync.server.plist
+
+  卸载：
+    launchctl bootout gui/501/com.clipsync.server
+
+  注意：GUI 程序的自启要等你登录桌面之后才会跑（macOS 没有自动登录的话，
+  开机后不登录是不会启动的）。
+-->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.clipsync.server</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/bin/python3</string>
+		<string>-u</string>
+		<string>/Users/yuriko/bin/clipsync.py</string>
+		<string>serve</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>StandardOutPath</key>
+	<string>/Users/yuriko/Library/Logs/clipsync.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/yuriko/Library/Logs/clipsync.log</string>
+</dict>
+</plist>
